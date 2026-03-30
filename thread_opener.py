@@ -1,8 +1,3 @@
-"""
-Lolz.Live Thread Opener
-Открывает все закрытые темы на форуме через API
-"""
-
 import requests
 import time
 import sys
@@ -13,36 +8,24 @@ from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 
-# ═══════════════════════════════════════════════════
-# КОНФИГУРАЦИЯ
-# ═══════════════════════════════════════════════════
-
 API_BASE_URL = "https://api.zelenka.guru"
 RATE_LIMIT_DELAY = 0.35
 THREADS_PER_PAGE = 50
 
-# ═══════════════════════════════════════════════════
-# ЦВЕТА
-# ═══════════════════════════════════════════════════
-
 class C:
     RST  = "\033[0m"
-    R    = "\033[91m"    # красный
-    G    = "\033[92m"    # зелёный
-    Y    = "\033[93m"    # жёлтый
-    B    = "\033[94m"    # синий
-    M    = "\033[95m"    # пурпурный
-    CY   = "\033[96m"    # голубой
-    W    = "\033[97m"    # белый
+    R    = "\033[91m"
+    G    = "\033[92m"
+    Y    = "\033[93m"
+    B    = "\033[94m"
+    M    = "\033[95m"
+    CY   = "\033[96m"
+    W    = "\033[97m"
     BOLD = "\033[1m"
     DIM  = "\033[2m"
 
 def clr(text, color):
     return f"{color}{text}{C.RST}"
-
-# ═══════════════════════════════════════════════════
-# ЛОГИРОВАНИЕ
-# ═══════════════════════════════════════════════════
 
 def ts():
     return datetime.now().strftime("%H:%M:%S")
@@ -57,10 +40,6 @@ def log(msg, level="info"):
 def separator():
     print(f"  {clr('-' * 62, C.DIM)}")
 
-# ═══════════════════════════════════════════════════
-# БАННЕР
-# ═══════════════════════════════════════════════════
-
 def print_banner():
     print(f"""
   {clr('=' * 50, C.CY)}
@@ -68,10 +47,6 @@ def print_banner():
   {clr('  Автоматическое открытие закрытых тем', C.DIM)}
   {clr('=' * 50, C.CY)}
 """)
-
-# ═══════════════════════════════════════════════════
-# API КЛИЕНТ
-# ═══════════════════════════════════════════════════
 
 class LolzAPI:
     def __init__(self, token: str):
@@ -129,12 +104,7 @@ class LolzAPI:
             "thread_is_closed": 0,
         })
 
-# ═══════════════════════════════════════════════════
-# ОСНОВНАЯ ЛОГИКА
-# ═══════════════════════════════════════════════════
-
 def get_token():
-    # 1. Из config.json
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
@@ -146,13 +116,11 @@ def get_token():
         except Exception:
             pass
 
-    # 2. Из переменной окружения
     token = os.environ.get("LOLZ_TOKEN", "").strip()
     if token:
         log("Токен загружен из LOLZ_TOKEN")
         return token
 
-    # 3. Ввод вручную
     print(f"  {clr('Введите API токен:', C.W)}")
     print(f"  {clr('https://lolz.live/account/api', C.DIM)}")
     print()
@@ -161,7 +129,6 @@ def get_token():
         log("Токен пуст", "err")
         sys.exit(1)
 
-    # Сохраняем
     try:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump({"token": token}, f, indent=2)
@@ -249,7 +216,6 @@ def main():
 
     api = LolzAPI(token)
 
-    # Авторизация
     log("Проверка токена...")
     me = api.get_me()
     if not me:
@@ -263,7 +229,6 @@ def main():
     separator()
     print()
 
-    # Сканирование
     closed = fetch_closed_threads(api)
 
     if not closed:
@@ -271,11 +236,9 @@ def main():
         log("Закрытых тем не найдено", "ok")
         return
 
-    # Разделяем на редактируемые и нет
     editable = [t for t in closed if t.get("can_edit")]
     locked   = [t for t in closed if not t.get("can_edit")]
 
-    # Вывод списка
     print()
     if editable:
         log(f"Можно открыть ({clr(str(len(editable)), C.Y)}):")
@@ -295,7 +258,6 @@ def main():
         log("Нет тем с правами на редактирование", "warn")
         return
 
-    # Подтверждение
     print()
     separator()
     confirm = input(f"  Открыть {clr(str(len(editable)), C.W)} тем? (y/n): ").strip().lower()
@@ -306,10 +268,8 @@ def main():
 
     print()
 
-    # Открытие
     ok, fail = open_threads(api, editable)
 
-    # Итоги
     print()
     separator()
     log(f"Результат:", "info")
