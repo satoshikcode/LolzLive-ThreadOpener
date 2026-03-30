@@ -101,7 +101,7 @@ class LolzAPI:
 
     def open_thread(self, thread_id):
         return self._request("PUT", f"/threads/{thread_id}", data={
-            "thread_is_closed": 0,
+            "discussion_open": 1,
         })
 
 def get_token():
@@ -166,9 +166,17 @@ def fetch_closed_threads(api):
             title = t.get("thread_title", "—")
             is_closed = t.get("thread_is_closed", False)
             can_edit = t.get("permissions", {}).get("edit", False)
+            forum_id = t.get("forum_id", 0)
+            forum_title = t.get("forum", {}).get("forum_title", "") or t.get("node_title", f"Forum #{forum_id}")
 
             if is_closed:
-                closed.append({"id": tid, "title": title, "can_edit": can_edit})
+                closed.append({
+                    "id": tid,
+                    "title": title,
+                    "can_edit": can_edit,
+                    "forum_id": forum_id,
+                    "forum_title": forum_title,
+                })
 
         if len(threads) < THREADS_PER_PAGE:
             break
@@ -178,6 +186,101 @@ def fetch_closed_threads(api):
     log(f"Просканировано: {clr(str(total), C.W)}")
     log(f"Закрытых:       {clr(str(len(closed)), C.Y)}")
     return closed
+
+
+def get_unique_forums(threads):
+    forums = {}
+    for t in threads:
+        fid = t["forum_id"]
+        if fid not in forums:
+            forums[fid] = {"id": fid, "title": t["forum_title"], "count": 0}
+        forums[fid]["count"] += 1
+    return list(forums.values())
+
+
+def select_filter_mode(forums, total_count):
+    print()
+    separator()
+    log("Выберите режим:")
+    print()
+    print(f"    {clr('1.', C.W)} Открыть все закрытые темы {clr(f'({total_count} шт)', C.DIM)}")
+    print(f"    {clr('2.', C.W)} Открыть только в выбранных разделах")
+    print(f"    {clr('3.', C.W)} Открыть во всех разделах кроме выбранных")
+    print(f"    {clr('4.', C.W)} Открыть конкретные темы по ID")
+    print()
+
+    choice = input(f"  {clr('>', C.CY)} ").strip()
+
+    if choice == "1":
+        return None
+
+    if choice == "4":
+        print()
+        print(f"  {clr('Введите ID тем через запятую:', C.W)}")
+        raw = input(f"  {clr('>', C.CY)} ").strip()
+        try:
+            ids = set(int(x.strip()) for x in raw.split(",") if x.strip())
+        except ValueError:
+            log("Неверный ввод", "err")
+            sys.exit(1)
+        if not ids:
+            log("Ничего не введено", "err")
+            sys.exit(1)
+        log(f"Выбрано тем по ID: {clr(str(len(ids)), C.Y)}")
+        return ("ids", ids)
+
+    if choice not in ("2", "3"):
+        log("Неверный выбор", "err")
+        sys.exit(1)
+
+    print()
+    separator()
+    log("Разделы с закрытыми темами:")
+    print()
+    for i, f in enumerate(forums, 1):
+        fid = f["id"]
+        ftitle = f["title"][:45]
+        fcount = f["count"]
+        print(f"    {clr(f'{i:>3}.', C.DIM)}  {clr(ftitle, C.W)}  {clr(f'({fcount} тем)', C.DIM)}  {clr(f'ID:{fid}', C.DIM)}")
+
+    print()
+    print(f"  {clr('Введите номера через запятую (1,3,5):', C.W)}")
+    raw = input(f"  {clr('>', C.CY)} ").strip()
+
+    try:
+        indices = [int(x.strip()) for x in raw.split(",") if x.strip()]
+        selected_ids = set()
+        for idx in indices:
+            if 1 <= idx <= len(forums):
+                selected_ids.add(forums[idx - 1]["id"])
+    except ValueError:
+        log("Неверный ввод", "err")
+        sys.exit(1)
+
+    if not selected_ids:
+        log("Ничего не выбрано", "err")
+        sys.exit(1)
+
+    selected_names = [f["title"] for f in forums if f["id"] in selected_ids]
+    if choice == "2":
+        log(f"Только разделы: {clr(', '.join(selected_names), C.Y)}")
+        return ("include", selected_ids)
+    else:
+        log(f"Исключены разделы: {clr(', '.join(selected_names), C.R)}")
+        return ("exclude", selected_ids)
+
+
+def apply_filter(threads, filter_mode):
+    if filter_mode is None:
+        return threads
+
+    mode, values = filter_mode
+    if mode == "include":
+        return [t for t in threads if t["forum_id"] in values]
+    elif mode == "exclude":
+        return [t for t in threads if t["forum_id"] not in values]
+    elif mode == "ids":
+        return [t for t in threads if t["id"] in values]
 
 
 def open_threads(api, threads):
@@ -239,28 +342,36 @@ def main():
     editable = [t for t in closed if t.get("can_edit")]
     locked   = [t for t in closed if not t.get("can_edit")]
 
-    print()
-    if editable:
-        log(f"Можно открыть ({clr(str(len(editable)), C.Y)}):")
-        for i, t in enumerate(editable, 1):
-            tid = t['id']
-            print(f"    {clr(f'{i:>3}.', C.DIM)}  {clr(t['title'][:55], C.Y)}  {clr(f'#{tid}', C.DIM)}")
-
     if locked:
         print()
-        log(f"Нет прав на открытие ({clr(str(len(locked)), C.R)}):")
-        for i, t in enumerate(locked, 1):
-            tid = t['id']
-            print(f"    {clr(f'{i:>3}.', C.DIM)}  {clr(t['title'][:55], C.R)}  {clr(f'#{tid}', C.DIM)}")
+        log(f"Без прав на открытие: {clr(str(len(locked)), C.R)} тем (пропущены)")
 
     if not editable:
         print()
         log("Нет тем с правами на редактирование", "warn")
         return
 
+    forums = get_unique_forums(editable)
+    filter_mode = select_filter_mode(forums, len(editable))
+    filtered = apply_filter(editable, filter_mode)
+
+    if not filtered:
+        print()
+        log("После фильтрации не осталось тем", "warn")
+        return
+
     print()
     separator()
-    confirm = input(f"  Открыть {clr(str(len(editable)), C.W)} тем? (y/n): ").strip().lower()
+    log(f"К открытию: {clr(str(len(filtered)), C.Y)} тем")
+    print()
+    for i, t in enumerate(filtered, 1):
+        tid = t['id']
+        fname = t['forum_title'][:20]
+        print(f"    {clr(f'{i:>3}.', C.DIM)}  {clr(t['title'][:40], C.Y)}  {clr(f'[{fname}]', C.DIM)}  {clr(f'#{tid}', C.DIM)}")
+
+    print()
+    separator()
+    confirm = input(f"  Открыть {clr(str(len(filtered)), C.W)} тем? (y/n): ").strip().lower()
 
     if confirm not in ("y", "yes", "д", "да"):
         log("Отмена", "warn")
@@ -268,7 +379,7 @@ def main():
 
     print()
 
-    ok, fail = open_threads(api, editable)
+    ok, fail = open_threads(api, filtered)
 
     print()
     separator()
@@ -276,7 +387,7 @@ def main():
     log(f"  Открыто:  {clr(str(ok), C.G)}", "ok")
     if fail > 0:
         log(f"  Ошибок:   {clr(str(fail), C.R)}", "err")
-    log(f"  Всего:    {clr(str(len(editable)), C.W)}")
+    log(f"  Всего:    {clr(str(len(filtered)), C.W)}")
     separator()
 
     if fail == 0:
