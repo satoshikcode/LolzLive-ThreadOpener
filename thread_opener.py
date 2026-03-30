@@ -8,7 +8,7 @@ from datetime import datetime
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "config.json")
 
-API_BASE_URL = "https://api.zelenka.guru"
+API_BASE_URL = "https://prod-api.lolz.live"
 RATE_LIMIT_DELAY = 0.35
 THREADS_PER_PAGE = 50
 
